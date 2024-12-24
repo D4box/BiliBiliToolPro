@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
+# cron:0 0 1 1 *
 # new Env("bili扫码登录")
-# cron 0 0 1 1 * bili_task_login.sh
+
 . bili_task_base.sh
 
-cd ./src/Ray.BiliBiliTool.Console
-
-export Ray_RunTasks=Login && \
-dotnet run --ENVIRONMENT=Production
+target_task_code="Login"
+run_task "${target_task_code}"

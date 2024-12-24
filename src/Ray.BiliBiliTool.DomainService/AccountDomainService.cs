@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ray.BiliBiliTool.Agent;
@@ -24,6 +25,7 @@ namespace Ray.BiliBiliTool.DomainService
         private readonly IRelationApi _relationApi;
         private readonly UnfollowBatchedTaskOptions _unfollowBatchedTaskOptions;
         private readonly BiliCookie _cookie;
+        private readonly DailyTaskOptions _dailyTaskOptions;
 
         public AccountDomainService(
             ILogger<AccountDomainService> logger,
@@ -31,14 +33,15 @@ namespace Ray.BiliBiliTool.DomainService
             BiliCookie cookie,
             IUserInfoApi userInfoApi,
             IRelationApi relationApi,
-            IOptionsMonitor<UnfollowBatchedTaskOptions> unfollowBatchedTaskOptions
-        )
+            IOptionsMonitor<UnfollowBatchedTaskOptions> unfollowBatchedTaskOptions,
+            IOptionsMonitor<DailyTaskOptions> dailyTaskOptions)
         {
             _logger = logger;
             _dailyTaskApi = dailyTaskApi;
             _cookie = cookie;
             _userInfoApi = userInfoApi;
             _relationApi = relationApi;
+            _dailyTaskOptions = dailyTaskOptions.CurrentValue;
             _unfollowBatchedTaskOptions = unfollowBatchedTaskOptions.CurrentValue;
         }
 
@@ -46,9 +49,9 @@ namespace Ray.BiliBiliTool.DomainService
         /// 登录
         /// </summary>
         /// <returns></returns>
-        public UserInfo LoginByCookie()
+        public async Task<UserInfo> LoginByCookie()
         {
-            BiliApiResponse<UserInfo> apiResponse = _userInfoApi.LoginByCookie().GetAwaiter().GetResult();
+            BiliApiResponse<UserInfo> apiResponse = await _userInfoApi.LoginByCookie();
 
             if (apiResponse.Code != 0 || !apiResponse.Data.IsLogin)
             {
@@ -58,9 +61,6 @@ namespace Ray.BiliBiliTool.DomainService
 
             UserInfo useInfo = apiResponse.Data;
 
-            //获取到UserId
-            _cookie.UserId = useInfo.Mid.ToString();
-
             _logger.LogInformation("【用户名】{0}", useInfo.GetFuzzyUname());
             _logger.LogInformation("【会员类型】{0}", useInfo.VipType.Description());
             _logger.LogInformation("【会员状态】{0}", useInfo.VipStatus.Description());
@@ -68,9 +68,9 @@ namespace Ray.BiliBiliTool.DomainService
 
             if (useInfo.Level_info.Current_level < 6)
             {
-                _logger.LogInformation("【距升级Lv{0}】{1}天（如每日做满65点经验）",
+                _logger.LogInformation("【距升级Lv{0}】预计{1}天",
                     useInfo.Level_info.Current_level + 1,
-                    (useInfo.Level_info.GetNext_expLong() - useInfo.Level_info.Current_exp) / Constants.EveryDayExp);
+                    CalculateUpgradeTime(useInfo));
             }
             else
             {
@@ -85,10 +85,10 @@ namespace Ray.BiliBiliTool.DomainService
         /// 获取每日任务完成情况
         /// </summary>
         /// <returns></returns>
-        public DailyTaskInfo GetDailyTaskStatus()
+        public async Task<DailyTaskInfo> GetDailyTaskStatus()
         {
             DailyTaskInfo result = new();
-            BiliApiResponse<DailyTaskInfo> apiResponse = _dailyTaskApi.GetDailyTaskRewardInfo().GetAwaiter().GetResult();
+            BiliApiResponse<DailyTaskInfo> apiResponse = await _dailyTaskApi.GetDailyTaskRewardInfoAsync();
             if (apiResponse.Code == 0)
             {
                 _logger.LogDebug("请求本日任务完成状态成功");
@@ -96,8 +96,8 @@ namespace Ray.BiliBiliTool.DomainService
             }
             else
             {
-                _logger.LogWarning("获取今日任务完成状态失败：{result}", apiResponse.ToJson());
-                result = _dailyTaskApi.GetDailyTaskRewardInfo().GetAwaiter().GetResult().Data;
+                _logger.LogWarning("获取今日任务完成状态失败：{result}", apiResponse.ToJsonStr());
+                result = (await _dailyTaskApi.GetDailyTaskRewardInfoAsync()).Data;
                 //todo:偶发性请求失败，再请求一次，这么写很丑陋，待用polly再框架层面实现
             }
 
@@ -109,13 +109,13 @@ namespace Ray.BiliBiliTool.DomainService
         /// </summary>
         /// <param name="groupName"></param>
         /// <param name="count"></param>
-        public void UnfollowBatched()
+        public async Task UnfollowBatched()
         {
             _logger.LogInformation("【分组名】{group}", _unfollowBatchedTaskOptions.GroupName);
 
             //根据分组名称获取tag
-            TagDto tag = GetTag(_unfollowBatchedTaskOptions.GroupName);
-            int? tagId = tag?.Tagid;
+            TagDto tag = await GetTag(_unfollowBatchedTaskOptions.GroupName);
+            var tagId = tag?.Tagid;
             int total = tag?.Count ?? 0;
 
             if (!tagId.HasValue)
@@ -143,9 +143,7 @@ namespace Ray.BiliBiliTool.DomainService
             {
                 Pn = totalPage
             };
-            List<UpInfo> followings = _relationApi.GetFollowingsByTag(req)
-                .GetAwaiter().GetResult()
-                .Data;
+            List<UpInfo> followings = (await _relationApi.GetFollowingsByTag(req)).Data;
             followings.Reverse();
 
             var targetList = new List<UpInfo>();
@@ -165,9 +163,7 @@ namespace Ray.BiliBiliTool.DomainService
                     pn -= 1;
                     if (pn <= 0) break;
                     req.Pn = pn;
-                    followings = _relationApi.GetFollowingsByTag(req)
-                        .GetAwaiter().GetResult()
-                        .Data;
+                    followings = (await _relationApi.GetFollowingsByTag(req)).Data;
                     followings.Reverse();
                 }
             }
@@ -189,8 +185,7 @@ namespace Ray.BiliBiliTool.DomainService
 
                 string modifyReferer = string.Format(RelationApiConstant.ModifyReferer, _cookie.UserId, tagId);
                 var modifyReq = new ModifyRelationRequest(info.Mid, _cookie.BiliJct);
-                var re = _relationApi.ModifyRelation(modifyReq, modifyReferer)
-                    .GetAwaiter().GetResult();
+                var re = await _relationApi.ModifyRelation(modifyReq, modifyReferer);
 
                 if (re.Code == 0)
                 {
@@ -207,7 +202,7 @@ namespace Ray.BiliBiliTool.DomainService
             _logger.LogInformation("【本次共取关】{count}人", success);
 
             //计算剩余
-            tag = GetTag(_unfollowBatchedTaskOptions.GroupName);
+            tag = await GetTag(_unfollowBatchedTaskOptions.GroupName);
             _logger.LogInformation("【分组下剩余】{count}人", tag?.Count ?? 0);
         }
 
@@ -216,14 +211,49 @@ namespace Ray.BiliBiliTool.DomainService
         /// </summary>
         /// <param name="groupName"></param>
         /// <returns></returns>
-        private TagDto GetTag(string groupName)
+        private async Task<TagDto> GetTag(string groupName)
         {
             string getTagsReferer = string.Format(RelationApiConstant.GetTagsReferer, _cookie.UserId);
-            List<TagDto> tagList = _relationApi.GetTags(getTagsReferer)
-                .GetAwaiter().GetResult()
-                .Data;
+            List<TagDto> tagList = (await _relationApi.GetTags(getTagsReferer)).Data;
             TagDto tag = tagList.FirstOrDefault(x => x.Name == groupName);
             return tag;
         }
+
+        /// <summary>
+        /// 计算升级时间
+        /// </summary>
+        /// <param name="useInfo"></param>
+        /// <returns>升级时间</returns>
+        public int CalculateUpgradeTime(UserInfo useInfo)
+        {
+            double availableCoins = decimal.ToDouble(useInfo.Money ?? 0) - _dailyTaskOptions.NumberOfProtectedCoins;
+            long needExp = useInfo.Level_info.GetNext_expLong() - useInfo.Level_info.Current_exp;
+            int needDay;
+
+            if (availableCoins < 0)
+                needDay = (int)((double)needExp / 25 + _dailyTaskOptions.NumberOfProtectedCoins - Math.Abs(availableCoins));
+
+            switch (_dailyTaskOptions.NumberOfCoins)
+            {
+                case 0:
+                    needDay = (int)(needExp / 15);
+                    break;
+                case 1:
+                    needDay = (int)(needExp / 25);
+                    break;
+                default:
+                    int dailyExpAvailable = 15 + _dailyTaskOptions.NumberOfCoins * 10;
+                    double needFrontDay = availableCoins / (_dailyTaskOptions.NumberOfCoins - 1);
+
+                    if ((double)needExp / dailyExpAvailable > needFrontDay)
+                        needDay = (int)(needFrontDay + (needExp - dailyExpAvailable * needFrontDay) / 25);
+                    else
+                        needDay= (int)(needExp / dailyExpAvailable );
+                    break;
+            }
+
+            return needDay;
+        }
+
     }
 }

@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Linq;
+using System.Text;
 
 namespace Ray.BiliBiliTool.Agent.BiliBiliAgent.Dtos
 {
@@ -74,6 +75,11 @@ namespace Ray.BiliBiliTool.Agent.BiliBiliAgent.Dtos
                 return VipType.None;
             }
         }
+
+        /// <summary>
+        /// 防爬加密用的
+        /// </summary>
+        public WbiImg Wbi_img { get; set; }
     }
 
     /// <summary>
@@ -132,5 +138,24 @@ namespace Ray.BiliBiliTool.Agent.BiliBiliAgent.Dtos
         public decimal Coupon_balance { get; set; }
 
         //public int Coupon_due_time { get; set; }
+    }
+
+    public class WbiImg
+    {
+        /// <summary>
+        /// img url
+        /// </summary>
+        /// <sample>https://i0.hdslb.com/bfs/wbi/9cd4224d4fe74c7e9d6963e2ef891688.png</sample>
+        public string img_url { get; set; }
+
+        /// <summary>
+        /// sub url
+        /// </summary>
+        /// <sample>https://i0.hdslb.com/bfs/wbi/263655ae2cad4cce95c9c401981b044a.png</sample>
+        public string sub_url { get; set; }
+
+        public string ImgKey => img_url.Split("wbi/").ToList().Last().Replace(".png", "");
+
+        public string SubKey => sub_url.Split("wbi/").ToList().Last().Replace(".png", "");
     }
 }

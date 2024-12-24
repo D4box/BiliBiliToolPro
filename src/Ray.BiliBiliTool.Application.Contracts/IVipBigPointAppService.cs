@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text;
+using System.Threading.Tasks;
+using Ray.BiliBiliTool.DomainService.Dtos;
 
 namespace Ray.BiliBiliTool.Application.Contracts
 {
@@ -12,5 +14,9 @@ namespace Ray.BiliBiliTool.Application.Contracts
 
     public interface IVipBigPointAppService : IAppService
     {
+        Task VipExpress();
+        Task<bool> WatchBangumi();
     }
+
+
 }

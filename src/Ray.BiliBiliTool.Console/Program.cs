@@ -1,7 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,21 +17,31 @@ namespace Ray.BiliBiliTool.Console
 {
     public class Program
     {
-        public static void Main(string[] args)
+        public static async Task<int> Main(string[] args)
         {
+            System.Console.CancelKeyPress += (sender, eventArgs) =>
+            {
+                eventArgs.Cancel = true;
+                Environment.Exit(0);
+            };
+
+            PrintLogo();
+
             IHost host = CreateHost(args);
 
             try
             {
-                host.Run();
+                await host.RunAsync();
+                return 0;
             }
             catch (Exception ex)
             {
                 Log.Fatal(ex, "Host terminated unexpectedly!");
+                return 1;
             }
             finally
             {
-                Log.CloseAndFlush();
+                await Log.CloseAndFlushAsync();
             }
         }
 
@@ -47,32 +56,44 @@ namespace Ray.BiliBiliTool.Console
 
         internal static IHostBuilder CreateHostBuilder(string[] args)
         {
+            //IHostBuilder hostBuilder = Host.CreateDefaultBuilder();
             IHostBuilder hostBuilder = new HostBuilder();
 
-            //承载系统自身的配置：
+            //hostBuilder.UseContentRoot(Directory.GetCurrentDirectory());
+
+            #region 承载系统自身的配置
+
             hostBuilder.ConfigureHostConfiguration(hostConfigurationBuilder =>
             {
-                Environment.SetEnvironmentVariable(HostDefaults.EnvironmentKey, Environment.GetEnvironmentVariable(Global.EnvironmentKey));
-                hostConfigurationBuilder.AddEnvironmentVariables();
+                hostConfigurationBuilder.AddEnvironmentVariables(prefix: "DOTNET_");
+
+                if (args is { Length: > 0 })
+                {
+                    hostConfigurationBuilder.AddCommandLine(args);
+                }
             });
 
-            //应用配置:
+            #endregion 承载系统自身的配置
+
+            #region 应用配置
+
             hostBuilder.ConfigureAppConfiguration((hostBuilderContext, configurationBuilder) =>
             {
                 Global.HostingEnvironment = hostBuilderContext.HostingEnvironment;
+                IHostEnvironment env = hostBuilderContext.HostingEnvironment;
 
                 //json文件：
-                configurationBuilder.AddJsonFile("appsettings.json", false, true)
-                    .AddJsonFile($"appsettings.{hostBuilderContext.HostingEnvironment.EnvironmentName}.json", true, true)
-                    .AddJsonFile("exp.json", false, true)
-                    .AddJsonFile("donateCoinCanContinueStatus.json", false, true);
+                string envName = hostBuilderContext.HostingEnvironment.EnvironmentName;
+                configurationBuilder.AddJsonFile("appsettings.json", true, true)
+                    .AddJsonFile($"appsettings.{envName}.json", true, true)
+                    ;
 
                 //用户机密：
-                if (hostBuilderContext.HostingEnvironment.IsDevelopment())
+                if (env.IsDevelopment() && env.ApplicationName?.Length > 0)
                 {
-                    //Assembly assembly = Assembly.Load(new AssemblyName(hostBuilderContext.HostingEnvironment.ApplicationName));
-                    Assembly assembly = typeof(Program).Assembly;
-                    configurationBuilder.AddUserSecrets(assembly, true);
+                    //var appAssembly = Assembly.Load(new AssemblyName(env.ApplicationName));
+                    Assembly appAssembly = Assembly.GetAssembly(typeof(Program));
+                    configurationBuilder.AddUserSecrets(appAssembly, optional: true, reloadOnChange: true);
                 }
 
                 //环境变量：
@@ -82,25 +103,34 @@ namespace Ray.BiliBiliTool.Console
                 //命令行：
                 if (args != null && args.Length > 0)
                 {
-                    configurationBuilder.AddCommandLine(args, hostBuilderContext.Configuration
-                        .GetSection("CommandLineMappings")
-                        .Get<Dictionary<string, string>>());
+                    configurationBuilder.AddCommandLine(args, Config.Constants.GetCommandLineMappingsDic());
                 }
 
                 //本地cookie存储文件
                 configurationBuilder.AddJsonFile("cookies.json", true, true);
+
+                //内置配置
+                configurationBuilder.AddInMemoryCollection(Config.Constants.GetExpDic());
+                configurationBuilder.AddInMemoryCollection(Config.Constants.GetDonateCoinCanContinueStatusDic());
             });
 
-            //日志:
+            #endregion 应用配置
+
+            #region 日志
+
             hostBuilder.ConfigureLogging((hostBuilderContext, loggingBuilder) =>
             {
                 Log.Logger = new LoggerConfiguration()
                 .ReadFrom.Configuration(hostBuilderContext.Configuration)
                 .CreateLogger();
                 SelfLog.Enable(x => System.Console.WriteLine(x ?? ""));
-            }).UseSerilog();
+            })
+                .UseSerilog();
 
-            //DI容器:
+            #endregion 日志
+
+            #region DI容器
+
             hostBuilder.ConfigureServices((hostContext, services) =>
             {
                 Global.ConfigurationRoot = (IConfigurationRoot)hostContext.Configuration;
@@ -113,7 +143,23 @@ namespace Ray.BiliBiliTool.Console
                 services.AddAppServices();
             });
 
+            #endregion DI容器
+
             return hostBuilder;
+        }
+
+        /// <summary>
+        /// 输出本工具启动logo
+        /// </summary>
+        private static void PrintLogo()
+        {
+            System.Console.WriteLine(@"  ____               ____    _   _____           _  ");
+            System.Console.WriteLine(@" |  _ \ __ _ _   _  | __ ) _| |_|_   _|__   ___ | | ");
+            System.Console.WriteLine(@" | |_) / _` | | | | |  _ \(_) (_) | |/ _ \ / _ \| | ");
+            System.Console.WriteLine(@" |  _ < (_| | |_| | | |_) | | | | | | (_) | (_) | | ");
+            System.Console.WriteLine(@" |_| \_\__,_|\__, | |____/|_|_|_| |_|\___/ \___/|_| ");
+            System.Console.WriteLine(@"             |___/                                  ");
+            System.Console.WriteLine();
         }
     }
 }

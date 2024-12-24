@@ -8,12 +8,14 @@ namespace Ray.BiliBiliTool.Agent.BiliBiliAgent.Dtos.Live
 {
     public class GetLiveRoomInfoResponse
     {
-        public int Room_id { get; set; }
+        public long Room_id { get; set; }
 
-        public int Area_id { get; set; }
+        public long Area_id { get; set; }
 
-        public int Parent_area_id { get; set; }
+        public long Parent_area_id { get; set; }
 
-        public int Uid { get; set; }
+        public int Live_Status { get; set; }
+
+        public long Uid { get; set; }
     }
 }

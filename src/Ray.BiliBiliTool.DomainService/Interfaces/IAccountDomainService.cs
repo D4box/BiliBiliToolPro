@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using System.Threading.Tasks;
 using Ray.BiliBiliTool.Agent.BiliBiliAgent.Dtos;
 
 namespace Ray.BiliBiliTool.DomainService.Interfaces
@@ -14,17 +12,24 @@ namespace Ray.BiliBiliTool.DomainService.Interfaces
         /// 使用Cookie登录
         /// </summary>
         /// <returns></returns>
-        UserInfo LoginByCookie();
+        Task<UserInfo> LoginByCookie();
 
         /// <summary>
         /// 获取每日任务完成情况
         /// </summary>
         /// <returns></returns>
-        DailyTaskInfo GetDailyTaskStatus();
+        Task<DailyTaskInfo> GetDailyTaskStatus();
 
         /// <summary>
         /// 批量取关
         /// </summary>
-        void UnfollowBatched();
+        Task UnfollowBatched();
+
+        /// <summary>
+        /// 计算升级时间
+        /// </summary>
+        /// <param name="useInfo"></param>
+        /// <returns>升级时间</returns>
+        int CalculateUpgradeTime(UserInfo useInfo);
     }
 }
